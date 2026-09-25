@@ -14,6 +14,7 @@ import starterBank from './content/starter-bank.json'
 import { createConsentController, type ConsentState } from './consent/controller'
 import { consentCard, permissionStep } from './consent/strings'
 import { rebuildGazetteer } from './listen/gazetteer'
+import { createRelayRanker } from './listen/relay-ranker'
 import { createTypedListenSession } from './listen/typed-session'
 import { createConfigClient } from './relay/config'
 import { createSpeechController } from './speech/controller'
@@ -55,6 +56,7 @@ export function TurnProvider({ children }: { children: ReactNode }) {
     let unsubscribeGazetteer: (() => void) | null = null
     let unsubscribeVoiceChanges: (() => void) | null = null
     let unsubscribeConfig: (() => void) | null = null
+    let unsubscribeConsent: (() => void) | null = null
     async function start() {
       const db = await SQLite.openDatabaseAsync('turn.db')
       const bank = createBankStore(db, starterBank)
@@ -94,7 +96,25 @@ export function TurnProvider({ children }: { children: ReactNode }) {
         },
         { voice: () => voiceSettings.selected().identifier, rate: () => voiceSettings.rate() }
       )
-      listen = createTypedListenSession(bank)
+      let consentRef: ReturnType<typeof createConsentController> | null = null
+      const nameTagger = turnListen
+      const allowed = () => consentRef?.snapshot().requestsBlocked === false
+      const remote = nameTagger
+        ? {
+            allowed,
+            rank: createRelayRanker({
+              bank,
+              config,
+              allowed,
+              findNames: nameTagger.findNames,
+              relayUrl,
+              createId: () => Crypto.randomUUID(),
+              request: fetch
+            }),
+            policy: () => config.snapshot().policy
+          }
+        : undefined
+      listen = createTypedListenSession(bank, remote)
       await listen.ready
       if (!active) {
         return
@@ -112,9 +132,12 @@ export function TurnProvider({ children }: { children: ReactNode }) {
         },
         navigate: (route) => (route === '/' ? router.dismissTo('/') : router.replace(route))
       })
+      consentRef = consent
       await consent.ready
       if (!active) return
-      const nameTagger = turnListen
+      unsubscribeConsent = consent.subscribe(() => {
+        if (consent.snapshot().requestsBlocked) listen?.cancelRemote()
+      })
       setReady({ bank, speech, voiceSettings, listen, consent, nameTagger, config, typesafeNamed })
       unsubscribeConfig = config.subscribe(() => {
         const named = config.typesafeNamed()
@@ -143,6 +166,7 @@ export function TurnProvider({ children }: { children: ReactNode }) {
       unsubscribeGazetteer?.()
       unsubscribeVoiceChanges?.()
       unsubscribeConfig?.()
+      unsubscribeConsent?.()
       listen?.dispose()
     }
   }, [])
