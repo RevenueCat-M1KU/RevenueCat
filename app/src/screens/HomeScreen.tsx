@@ -127,13 +127,15 @@ export default function HomeScreen({ bank, speech, listen, boldText }: Props) {
   const under18Active = listening.active && consentState.under18
   const captionStatus = under18Active
     ? consentWords.under18Note
-    : listening.answeringLine
-      ? `Still answering: ${listening.answeringLine}`
-      : listening.line
-        ? `They said${listening.rankedOnPhone ? ' · Ranked on this phone' : ''}`
-        : listening.active
-          ? 'Mic off · Typed lines only'
-          : null
+    : listening.degraded
+      ? `Listen mode is degraded${listening.answeringLine ? ' · Still answering' : ''}`
+      : listening.answeringLine
+        ? `Still answering: ${listening.answeringLine}`
+        : listening.line
+          ? `They said${listening.rankedOnPhone ? ' · Ranked on this phone' : ''}`
+          : listening.active
+            ? 'Mic off · Typed lines only'
+            : null
   const captionText = listening.active ? (listening.line ?? consentWords.typedLinePrompt) : 'Listen mode is off.'
   const listenControlDisabled = listening.active || !consent || startingListen
 
@@ -469,15 +471,20 @@ export default function HomeScreen({ bank, speech, listen, boldText }: Props) {
           >
             {categories.map((category) => {
               const selected = categoryId === category.id
+              const suggested = listening.active && listening.row.tab === category.id
               return (
                 <Pressable
                   key={category.id}
                   accessibilityRole="button"
                   accessibilityState={{ selected }}
+                  accessibilityValue={suggested ? { text: 'suggested' } : undefined}
                   onPress={() => chooseCategory(category.id)}
                   style={{
                     minHeight: tabHeight,
                     minWidth: 44,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
                     justifyContent: 'center',
                     paddingHorizontal: 16,
                     borderRadius: 22,
@@ -489,10 +496,21 @@ export default function HomeScreen({ bank, speech, listen, boldText }: Props) {
                   <TurnText
                     kind="subheadline-emphasized"
                     boldText={boldText}
-                    style={{ color: selected ? colors.surface : colors.ink }}
+                    style={{ color: selected ? colors.surface : colors.ink, fontWeight: suggested ? '700' : '600' }}
                   >
                     {category.name}
                   </TurnText>
+                  {suggested && (
+                    <View
+                      accessible={false}
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: selected ? colors.surface : colors.ink
+                      }}
+                    />
+                  )}
                 </Pressable>
               )
             })}
